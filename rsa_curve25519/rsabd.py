@@ -9,6 +9,8 @@ openssl x509 -req -days 365 -in poc.csr -signkey poc.key -out poc.crt
 ./rsabd.py '' poc.crt
 """
 
+#!/usr/bin/env python
+
 import sys
 import gmpy
 
@@ -83,13 +85,11 @@ def build_key(bits=2048, e=65537, embed='', pos=1, randfunc=None):
 
 def recover_seed(key='', modulus=None, pos=1):
     # recreate the master private key from the passphrase
-    #master = bytes(sha256(key).digest())
-    # or just reuse hashed master
-    master = bytes(unhexlify(MASTER_PUB_HEX))
+    master = curve25519.Private(secret=sha256(key).digest())
     # extract the ephemeral public key from modulus
-    ephem_pub = modulus[pos:pos+32]
+    ephem_pub = curve25519.Public(modulus[pos:pos+32])
     # compute seed with master private and ephemeral public
-    return (curve25519.shared(master,ephem_pub), ephem_pub)
+    return (master.get_shared_key(ephem_pub), ephem_pub)
 
 if __name__ == "__main__":
     # passphrase and filename as arguments
@@ -102,18 +102,18 @@ if __name__ == "__main__":
     # no arguments, just generate a private key
     else:
         # deserialize master ECDH public key embedded in program
-        master_pub = curve25519.public(unhexlify(MASTER_PUB_HEX))
+        master_pub = curve25519.Public(unhexlify(MASTER_PUB_HEX))
         # generate a random (yes, actually random) ECDH private key
-        ephem = curve25519.genkey()
+        ephem = curve25519.Private()
         # derive the corresponding public key for later embedding
-        ephem_pub = curve25519.public(ephem)
+        ephem_pub = ephem.get_public()
         # combine the ECDH keys to generate the seed
-        seed = curve25519.shared(ephem,master_pub)
+        seed = ephem.get_shared_key(master_pub)
 
     prng = AESPRNG(seed)
-    ephem_pub = bytes(ephem_pub)
+    ephem_pub = ephem_pub.serialize()
 
-    # deterministic key generation from seed
+    # deterministic key generation from seed 
     rsa = build_key(embed=ephem_pub, pos=80, randfunc=prng.randbytes)
 
     if 'orig_modulus' in locals():
